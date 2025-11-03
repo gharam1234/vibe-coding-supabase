@@ -43,12 +43,12 @@ export const useMagazines = () => {
           }
 
           // image_url에서 파일 경로 추출 (버킷 URL 이후의 경로)
-          const imagePath = magazine.image_url.split('/vibe-coding-storage/').pop() || '';
+          const imagePath = magazine.image_url.split('/vibe-storage/').pop() || '';
           
           // Supabase Storage의 getPublicUrl로 썸네일 생성
           const { data: thumbnailData } = supabase
             .storage
-            .from('vibe-coding-storage')
+            .from('vibe-storage')
             .getPublicUrl(imagePath, {
               transform: {
                 width: 323,

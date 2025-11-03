@@ -41,9 +41,9 @@ export function useMagazineDetail(id: string): UseMagazineDetailResult {
         let thumbnailUrl = data.image_url;
         if (data.image_url) {
           // Storage 경로에서 파일 경로 추출
-          // 예: https://xxx.supabase.co/storage/v1/object/public/vibe-coding-storage/path/to/file.jpg
+          // 예: https://xxx.supabase.co/storage/v1/object/public/vibe-storage/path/to/file.jpg
           // 또는 storage 경로만: path/to/file.jpg
-          const bucketName = 'vibe-coding-storage';
+          const bucketName = 'vibe-storage';
           
           // 이미 전체 URL인지, 아니면 경로만 있는지 확인
           let filePath = data.image_url;

@@ -12,7 +12,7 @@
                         - 테이블명: magazine
                         - 데이터
                             - image_url: string
-                                - 버킷명: vibe-coding-storage
+                                - 버킷명: vibe-storage
                                 - 파일명: yyyy/mm/dd/{UUID}.jpg
                             - category: string
                             - title: string

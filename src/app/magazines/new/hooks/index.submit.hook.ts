@@ -42,7 +42,7 @@ export const useSubmitMagazine = () => {
 
         // Supabase Storage에 업로드
         const { error: uploadError } = await supabase.storage
-          .from('vibe-coding-storage')
+          .from('vibe-storage')
           .upload(filePath, data.imageFile, {
             cacheControl: '3600',
             upsert: false
@@ -54,7 +54,7 @@ export const useSubmitMagazine = () => {
 
         // 업로드된 이미지의 Public URL 가져오기
         const { data: publicUrlData } = supabase.storage
-          .from('vibe-coding-storage')
+          .from('vibe-storage')
           .getPublicUrl(filePath);
 
         imageUrl = publicUrlData.publicUrl;
