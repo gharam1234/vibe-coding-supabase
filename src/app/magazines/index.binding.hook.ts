@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { getSupabaseClient } from '@/lib/supabase';
 
 export interface MagazineItem {
   id: string;
@@ -24,6 +24,8 @@ export const useMagazines = () => {
         setError(null);
 
         // Supabase에서 데이터 조회 (ANON 키 사용, 10개 제한)
+        const supabase = getSupabaseClient();
+
         const { data, error: fetchError } = await supabase
           .from('magazine')
           .select('id, image_url, category, title, description, tags')
@@ -74,4 +76,3 @@ export const useMagazines = () => {
 
   return { magazines, loading, error };
 };
-

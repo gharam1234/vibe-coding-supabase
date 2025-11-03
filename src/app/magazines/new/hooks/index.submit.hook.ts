@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { getSupabaseClient } from '@/lib/supabase';
 
 interface SubmitData {
   category: string;
@@ -19,6 +19,8 @@ export const useSubmitMagazine = () => {
     setError(null);
 
     try {
+      const supabase = getSupabaseClient();
+
       let imageUrl: string | null = null;
 
       // Step 1: 이미지 파일이 있으면 Supabase Storage에 업로드
@@ -100,4 +102,3 @@ export const useSubmitMagazine = () => {
     error
   };
 };
-

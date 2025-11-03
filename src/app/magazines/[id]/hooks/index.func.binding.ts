@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { supabase, Magazine } from '@/lib/supabase';
+import { getSupabaseClient, Magazine } from '@/lib/supabase';
 
 interface UseMagazineDetailResult {
   magazine: Magazine | null;
@@ -21,6 +21,8 @@ export function useMagazineDetail(id: string): UseMagazineDetailResult {
         setError(null);
 
         // 1-1) 매거진 데이터 조회
+        const supabase = getSupabaseClient();
+
         const { data, error: fetchError } = await supabase
           .from('magazine')
           .select('id, image_url, category, title, description, content, tags')
@@ -86,4 +88,3 @@ export function useMagazineDetail(id: string): UseMagazineDetailResult {
 
   return { magazine, loading, error };
 }
-
