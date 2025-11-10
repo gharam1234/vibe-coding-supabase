@@ -6,7 +6,8 @@ type PaymentStatus = "Paid" | "Cancelled";
 
 interface PortOnePayment {
   paymentId?: string;
-  amount?: number | { total?: number };
+  id?: string;
+  amount?: number | { total?: number | string };
   billingKey?: string;
   orderName?: string;
   customer?: {
@@ -29,8 +30,16 @@ function parseAmount(amount: PortOnePayment["amount"]): number | null {
     return amount;
   }
 
-  if (amount && typeof amount.total === "number") {
-    return amount.total;
+  if (amount && typeof amount === "object") {
+    const total = (amount as { total?: number | string }).total;
+    if (typeof total === "number") {
+      return total;
+    }
+
+    if (typeof total === "string") {
+      const parsed = Number(total);
+      return Number.isNaN(parsed) ? null : parsed;
+    }
   }
 
   return null;
@@ -69,7 +78,7 @@ async function fetchPayment(paymentId: string, apiSecret: string) {
 }
 
 async function savePaymentRecord(params: {
-  payment: PortOnePayment;
+  transactionKey: string;
   amount: number;
   nextScheduleAt: Date;
   nextScheduleId: string;
@@ -80,7 +89,7 @@ async function savePaymentRecord(params: {
   const supabase = getSupabaseClient();
 
   const { error } = await supabase.from("payment").insert({
-    transaction_key: params.payment.paymentId,
+    transaction_key: params.transactionKey,
     amount: params.amount,
     status: "Paid",
     start_at: params.startAt.toISOString(),
@@ -179,8 +188,15 @@ export async function POST(request: NextRequest) {
     const payment = await fetchPayment(payload.payment_id, apiSecret);
     const normalizedAmount = parseAmount(payment.amount);
 
-    if (!normalizedAmount || !payment.paymentId) {
-      console.error("포트원 결제 정보에 필수 데이터가 없습니다.");
+    const transactionKey = payment.paymentId ?? payment.id ?? payload.payment_id;
+
+    if (normalizedAmount === null) {
+      console.error("포트원 결제 금액 정보를 확인할 수 없습니다.");
+      return jsonError(500);
+    }
+
+    if (!transactionKey) {
+      console.error("포트원 결제에 필요한 거래 식별자를 확인할 수 없습니다.");
       return jsonError(500);
     }
 
@@ -192,7 +208,7 @@ export async function POST(request: NextRequest) {
       const nextScheduleAt = buildNextScheduleAt(endAt);
 
       await savePaymentRecord({
-        payment,
+        transactionKey,
         amount: normalizedAmount,
         nextScheduleAt,
         nextScheduleId,
