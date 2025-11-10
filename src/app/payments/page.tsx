@@ -2,17 +2,61 @@
 
 import { ArrowLeft } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { usePaymentBillingKey } from "./hooks/index.payment.hook";
+import { useState } from "react";
 
 export default function GlossaryPayments() {
   const router = useRouter();
+  const { requestBillingKey, processPayment, isLoading, error } = usePaymentBillingKey();
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const handleNavigateToList = () => {
     router.push('/magazines');
   };
 
-  const handleSubscribe = () => {
-    alert('구독이 완료되었습니다!');
-    handleNavigateToList();
+  const handleSubscribe = async () => {
+    setIsProcessing(true);
+    try {
+      // 고객 ID (실제로는 사용자 정보에서 가져와야 함)
+      const customerId = `user-${Date.now()}`;
+      const customerName = "구독자";
+      const orderName = "IT 매거진 월간 구독";
+      const amount = 9900;
+
+      // 1. 빌링키 발급 요청
+      const billingKeyResult = await requestBillingKey(customerId, customerName);
+      if (!billingKeyResult) {
+        alert(`빌링키 발급 실패: ${error || '알 수 없는 오류'}`);
+        return;
+      }
+
+      // 2. 빌링키로 결제 처리
+      const paymentResult = await processPayment({
+        billingKey: billingKeyResult.billingKey,
+        orderName: orderName,
+        amount: amount,
+        customer: {
+          id: customerId,
+        },
+      });
+
+      if (!paymentResult) {
+        alert('결제 처리 실패');
+        return;
+      }
+
+      // 3. 결제 성공 처리
+      if (paymentResult.success) {
+        alert('구독에 성공하였습니다.');
+        handleNavigateToList();
+      } else {
+        alert('결제에 실패했습니다.');
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '오류가 발생했습니다.');
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -68,11 +112,12 @@ export default function GlossaryPayments() {
               </div>
             </div>
 
-            <button 
+            <button
               className="payment-subscribe-button"
               onClick={handleSubscribe}
+              disabled={isProcessing || isLoading}
             >
-              구독하기
+              {isProcessing || isLoading ? '처리 중...' : '구독하기'}
             </button>
           </div>
         </div>
