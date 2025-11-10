@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import PortOne from '@portone/browser-sdk/v2';
+import PortOne, { type IssueBillingKeyRequest, BillingKeyMethod } from '@portone/browser-sdk/v2';
 
 interface BillingKeyResponse {
   billingKey: string;
@@ -40,8 +40,13 @@ export const usePaymentBillingKey = (): UsePaymentHookResult => {
 
       try {
         const storeId = process.env.NEXT_PUBLIC_PORTONE_STORE_ID;
+        const channelKey = process.env.NEXT_PUBLIC_PORTONE_CHANNEL_KEY;
         if (!storeId) {
           throw new Error('포트원 Store ID가 설정되지 않았습니다.');
+        }
+
+        if (!channelKey) {
+          throw new Error('포트원 Channel Key가 설정되지 않았습니다.');
         }
 
         // 포트원 SDK 확인
@@ -50,19 +55,22 @@ export const usePaymentBillingKey = (): UsePaymentHookResult => {
         }
 
         // 빌링키 발급 요청
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const requestData = {
-          storeId: storeId,
-          billingKeyMethod: 'CARD',
-          pgProvider: 'TOSS_PAYMENTS',
+        const requestData: IssueBillingKeyRequest = {
+          storeId,
+          channelKey,
+          billingKeyMethod: BillingKeyMethod.CARD,
+          issueName: 'IT 매거진 구독',
+          issueId: `issue-${customerKey}-${Date.now()}`,
+          customer: {
+            customerId: customerKey,
+            fullName: customerName,
+          },
           redirectUrl: `${window.location.origin}/payments`,
-          customerId: customerKey,
-          customerName: customerName,
           windowType: {
-            pc: 'POPUP',
+            pc: 'IFRAME',
             mobile: 'REDIRECTION',
           },
-        } as any;
+        };
         const response = await PortOne.requestIssueBillingKey(requestData);
 
         if (!response) {
