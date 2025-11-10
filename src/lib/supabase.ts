@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 let cachedClient: SupabaseClient | null = null;
+let cachedServiceClient: SupabaseClient | null = null;
 
 export const getSupabaseClient = (): SupabaseClient => {
   if (cachedClient) {
@@ -24,6 +25,37 @@ export const getSupabaseClient = (): SupabaseClient => {
 
   cachedClient = createClient(supabaseUrl, supabaseAnonKey);
   return cachedClient;
+};
+
+export const getSupabaseServiceRoleClient = (): SupabaseClient => {
+  if (cachedServiceClient) {
+    return cachedServiceClient;
+  }
+
+  const supabaseUrl =
+    process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl) {
+    throw new Error(
+      'SUPABASE_URL (또는 NEXT_PUBLIC_SUPABASE_URL) 환경 변수를 설정하세요.'
+    );
+  }
+
+  if (!supabaseServiceRoleKey) {
+    throw new Error(
+      'SUPABASE_SERVICE_ROLE_KEY 환경 변수를 설정하세요.'
+    );
+  }
+
+  cachedServiceClient = createClient(supabaseUrl, supabaseServiceRoleKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+
+  return cachedServiceClient;
 };
 
 export interface Magazine {

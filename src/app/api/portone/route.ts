@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
-import { getSupabaseClient } from "@/lib/supabase";
+import { getSupabaseServiceRoleClient } from "@/lib/supabase";
+
+// 웹훅 엔드포인트 설정: 동적 라우팅
+export const dynamic = "force-dynamic";
 
 type PaymentStatus = "Paid" | "Cancelled";
 
@@ -22,8 +25,21 @@ interface RequestBody {
 
 const PORTONE_BASE_URL = "https://api.portone.io";
 
+// 웹훅 엔드포인트용 헤더 설정
+const webhookHeaders = {
+  "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+  "Pragma": "no-cache",
+  "Expires": "0",
+};
+
 const jsonError = (status: number) =>
-  NextResponse.json({ success: false }, { status });
+  NextResponse.json(
+    { success: false },
+    {
+      status,
+      headers: webhookHeaders,
+    }
+  );
 
 function parseAmount(amount: PortOnePayment["amount"]): number | null {
   if (typeof amount === "number") {
@@ -86,7 +102,7 @@ async function savePaymentRecord(params: {
   endAt: Date;
   endGraceAt: Date;
 }) {
-  const supabase = getSupabaseClient();
+  const supabase = getSupabaseServiceRoleClient();
 
   const { error } = await supabase.from("payment").insert({
     transaction_key: params.transactionKey,
@@ -226,7 +242,12 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json(
+      { success: true },
+      {
+        headers: webhookHeaders,
+      }
+    );
   } catch (error) {
     console.error("포트원 정기결제 처리 실패:", error);
     return jsonError(500);
