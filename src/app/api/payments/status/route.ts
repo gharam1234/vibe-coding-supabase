@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase";
 
 interface PaymentStatusItem {
@@ -25,7 +25,7 @@ const CHECKLIST_STEPS = [
   "결과 반환",
 ] as const;
 
-export async function GET(request: NextRequest): Promise<NextResponse<PaymentStatusResponse>> {
+export async function GET(): Promise<NextResponse<PaymentStatusResponse>> {
   try {
     const checklist = CHECKLIST_STEPS.map((step) => ({ step, completed: false }));
     const markStepCompleted = (step: string) => {
