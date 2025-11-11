@@ -19,7 +19,7 @@ const mockUserData: UserProfile = {
   bio: "최신 IT 트렌드와 개발 이야기를 공유합니다",
   subscriptionStatus: "subscribed",
   joinDate: "2024.03",
-  transactionKey: "trx_mock_001"
+  transactionKey: "c71f1d04-10f4-44f7-b503-0dc736fcfa14"
 };
 
 export default function Page() {
