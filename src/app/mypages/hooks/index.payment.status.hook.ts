@@ -2,6 +2,23 @@
 
 import { useState, useCallback, useEffect } from "react";
 
+/**
+ * prompt.202 명세에 따른 결제 상태 조회 Hook
+ *
+ * 기능:
+ * - payment 테이블 조회 및 상태 판정
+ * - transaction_key 그룹화 및 최신 1건 선별
+ * - status='Paid' 및 유효기간 필터링
+ * - 체크리스트 형태의 진행 상황 반환
+ *
+ * 유효 구독 조건:
+ * 1. status === "Paid"
+ * 2. start_at <= now(UTC) <= end_grace_at
+ *
+ * 참고: 현재 테스트 목적이므로 사용자 식별값 없이 전체 조회
+ * (실제 서비스: user_id 필터 추가 필수)
+ */
+
 export interface PaymentStatusChecklistItem {
   step: string;
   completed: boolean;
@@ -25,6 +42,16 @@ interface UsePaymentStatusResult {
   refetch: () => Promise<void>;
 }
 
+/**
+ * 에러 토스트 문구 정의 (prompt.202 요구사항)
+ * 취소 호출 실패 시 노출할 에러 문구
+ */
+const ERROR_MESSAGES = {
+  fetchFailed: "결제 상태 조회에 실패했습니다.",
+  parseError: "결제 상태 조회 중 알 수 없는 오류가 발생했습니다.",
+  networkError: "네트워크 연결을 확인해주세요.",
+} as const;
+
 export function usePaymentStatus(): UsePaymentStatusResult {
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [transactionKey, setTransactionKey] = useState<string | undefined>();
@@ -38,6 +65,12 @@ export function usePaymentStatus(): UsePaymentStatusResult {
     setError(null);
 
     try {
+      /**
+       * API 호출: /api/payments/status
+       * - 서버에서 Supabase 쿼리 수행
+       * - 체크리스트 단계별 진행 상황 반환
+       * - isLoading 유지: UI 차단 및 스켈레톤/스피너 정책 수립
+       */
       const response = await fetch("/api/payments/status", {
         method: "GET",
         headers: {
@@ -46,19 +79,31 @@ export function usePaymentStatus(): UsePaymentStatusResult {
       });
 
       const data = (await response.json().catch(() => null)) as PaymentStatusResponse | null;
+
+      // 응답에서 체크리스트 추출 (성공/실패 모두)
       setChecklist(data?.checklist ?? []);
 
       if (!response.ok || !data?.success) {
-        throw new Error("결제 상태 조회에 실패했습니다.");
+        throw new Error(ERROR_MESSAGES.fetchFailed);
       }
 
+      // 결제 상태 업데이트
       setIsSubscribed(data.isSubscribed);
       setTransactionKey(data.transactionKey);
+
+      /**
+       * 메시지 판정:
+       * - 구독중: "구독중" (API 응답 메시지 또는 기본값)
+       * - 무료: "Free" (API 응답 메시지 또는 기본값)
+       * - 참고: 취소 호출 시 transaction_key와 payment_id 전달
+       *   (실제 서비스: 추후 user_id 추가 필수)
+       */
       setStatusMessage(data.message ?? (data.isSubscribed ? "구독중" : "Free"));
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "결제 상태 조회 중 알 수 없는 오류가 발생했습니다.";
+      const message = err instanceof Error ? err.message : ERROR_MESSAGES.parseError;
       setError(message);
+
+      // 에러 발생 시 무료 상태로 초기화
       setIsSubscribed(false);
       setTransactionKey(undefined);
       setStatusMessage("Free");
@@ -67,7 +112,10 @@ export function usePaymentStatus(): UsePaymentStatusResult {
     }
   }, []);
 
-  // 컴포넌트 마운트 시 결제 상태 조회
+  /**
+   * 컴포넌트 마운트 시 결제 상태 조회
+   * useEffect 의존성: fetchPaymentStatus (useCallback으로 메모이제이션됨)
+   */
   useEffect(() => {
     fetchPaymentStatus();
   }, [fetchPaymentStatus]);

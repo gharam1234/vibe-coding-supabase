@@ -91,9 +91,23 @@ export async function POST(request: NextRequest): Promise<NextResponse<CancelRes
 
     // 포트원 API 응답 확인
     if (!portoneResponse.ok) {
-      const errorData = await portoneResponse.text();
-      console.error("포트원 API 오류:", portoneResponse.status, errorData);
-      return respond(false, 500);
+      const errorText = await portoneResponse.text();
+      let errorJson: { type?: string } | null = null;
+      try {
+        errorJson = JSON.parse(errorText);
+      } catch {
+        /* noop: 포트원 오류 응답이 JSON이 아닐 수 있음 */
+      }
+
+      if (
+        portoneResponse.status === 409 &&
+        errorJson?.type === "PAYMENT_ALREADY_CANCELLED"
+      ) {
+        console.info("이미 취소된 결제 요청으로 간주하여 성공 처리합니다.");
+      } else {
+        console.error("포트원 API 오류:", portoneResponse.status, errorText);
+        return respond(false, 500);
+      }
     }
 
     markStepCompleted("포트원 결제 취소 요청");
