@@ -1,7 +1,6 @@
 "use client"
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
 import { usePaymentCancel } from "./hooks/index.payment.cancel.hook";
 import { usePaymentStatus } from "./hooks/index.payment.status.hook";
 
@@ -12,7 +11,7 @@ interface UserProfile {
   joinDate: string;
 }
 
-const mockUserData: UserProfile = {
+const userData: UserProfile = {
   profileImage: "https://images.unsplash.com/photo-1613145997970-db84a7975fbb?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxwcm9maWxlJTIwcG9ydHJhaXQlMjBwZXJzb258ZW58MXx8fHwxNzYyNTkxMjU5fDA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral",
   nickname: "테크러버",
   bio: "최신 IT 트렌드와 개발 이야기를 공유합니다",
@@ -21,7 +20,6 @@ const mockUserData: UserProfile = {
 
 export default function Page() {
   const router = useRouter();
-  const [user] = useState<UserProfile>(mockUserData);
   const { cancelSubscription, isCancelling, checklist: cancelChecklist, error: cancelError } = usePaymentCancel();
   const { isSubscribed, transactionKey, statusMessage, isLoading: isStatusLoading, error: statusError, checklist: statusChecklist } = usePaymentStatus();
 
@@ -70,14 +68,14 @@ export default function Page() {
       <div className="mypage-grid">
         {/* 프로필 카드 */}
         <div className="mypage-profile-card">
-          <img 
-            src={user.profileImage} 
-            alt={user.nickname}
+          <img
+            src={userData.profileImage}
+            alt={userData.nickname}
             className="mypage-avatar"
           />
-          <h2 className="mypage-name">{user.nickname}</h2>
-          <p className="mypage-bio-text">{user.bio}</p>
-          <div className="mypage-join-date">가입일 {user.joinDate}</div>
+          <h2 className="mypage-name">{userData.nickname}</h2>
+          <p className="mypage-bio-text">{userData.bio}</p>
+          <div className="mypage-join-date">가입일 {userData.joinDate}</div>
         </div>
 
         {/* 구독 플랜 카드 */}
