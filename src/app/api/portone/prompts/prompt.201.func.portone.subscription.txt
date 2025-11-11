@@ -32,7 +32,7 @@
                                         - start_at: 현재시각
                                         - end_at: 현재시각 + 30일
                                         - end_grace_at: 현재시각 + 31일
-                                        - next_schedule_at: end_at + 1일 오전 10시~11시 사이 임의 시각
+                                        - next_schedule_at: end_at + 1일 오전 1시~2시(UTC) 사이 임의 시각
                                         - next_schedule_id: 임의로 생성한 UUID
 
                 3. 다음달구독예약시나리오

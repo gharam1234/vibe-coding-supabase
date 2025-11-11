@@ -3,45 +3,36 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { usePaymentCancel } from "./hooks/index.payment.cancel.hook";
+import { usePaymentStatus } from "./hooks/index.payment.status.hook";
 
 interface UserProfile {
   profileImage: string;
   nickname: string;
   bio: string;
-  subscriptionStatus: "subscribed" | "unsubscribed";
   joinDate: string;
-  transactionKey: string;
 }
 
 const mockUserData: UserProfile = {
   profileImage: "https://images.unsplash.com/photo-1613145997970-db84a7975fbb?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxwcm9maWxlJTIwcG9ydHJhaXQlMjBwZXJzb258ZW58MXx8fHwxNzYyNTkxMjU5fDA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral",
   nickname: "테크러버",
   bio: "최신 IT 트렌드와 개발 이야기를 공유합니다",
-  subscriptionStatus: "subscribed",
   joinDate: "2024.03",
-  transactionKey: "c71f1d04-10f4-44f7-b503-0dc736fcfa14"
 };
 
 export default function Page() {
   const router = useRouter();
-  const [user, setUser] = useState<UserProfile>(mockUserData);
-  const { cancelSubscription, isCancelling, checklist, error } = usePaymentCancel();
+  const [user] = useState<UserProfile>(mockUserData);
+  const { cancelSubscription, isCancelling, checklist: cancelChecklist, error: cancelError } = usePaymentCancel();
+  const { isSubscribed, transactionKey, statusMessage, isLoading: isStatusLoading, error: statusError, checklist: statusChecklist } = usePaymentStatus();
 
   const handleBackToList = () => {
     router.push('/magazines');
   };
 
-  const handleSubscriptionToggle = () => {
-    setUser(prev => ({
-      ...prev,
-      subscriptionStatus: prev.subscriptionStatus === "subscribed" ? "unsubscribed" : "subscribed"
-    }));
-  };
-
   const handleCancelSubscription = async () => {
     if (!isSubscribed) return;
 
-    if (!user.transactionKey) {
+    if (!transactionKey) {
       alert("결제 정보가 없어 구독을 취소할 수 없습니다.");
       return;
     }
@@ -50,17 +41,17 @@ export default function Page() {
     if (!confirmed) return;
 
     await cancelSubscription({
-      transactionKey: user.transactionKey,
+      transactionKey: transactionKey,
       onSuccess: () => {
-        setUser(prev => ({
-          ...prev,
-          subscriptionStatus: "unsubscribed",
-        }));
+        // 구독 취소 후 상태 새로고침
+        window.location.reload();
       },
     });
   };
 
-  const isSubscribed = user.subscriptionStatus === "subscribed";
+  const handleSubscribe = () => {
+    router.push('/payments');
+  };
 
   return (
     <div className="mypage-wrapper">
@@ -93,12 +84,30 @@ export default function Page() {
         <div className={`mypage-subscription-card ${isSubscribed ? 'active' : ''}`}>
           <div className="mypage-subscription-header">
             <h3 className="mypage-card-title">구독 플랜</h3>
-            {isSubscribed && (
+            {isStatusLoading ? (
+              <span className="mypage-badge-loading">로딩 중...</span>
+            ) : isSubscribed ? (
               <span className="mypage-badge-active">구독중</span>
+            ) : (
+              <span className="mypage-badge-inactive">Free</span>
             )}
           </div>
 
-          {isSubscribed ? (
+          {isStatusLoading ? (
+            <div className="mypage-loading">
+              결제 상태를 조회하는 중입니다...
+            </div>
+          ) : statusError ? (
+            <div className="mypage-error-section">
+              <p className="mypage-error-text">{statusError}</p>
+              <button
+                className="mypage-retry-btn"
+                onClick={() => window.location.reload()}
+              >
+                다시 시도
+              </button>
+            </div>
+          ) : isSubscribed ? (
             <div className="mypage-subscription-active">
               <div className="mypage-plan-name">IT Magazine Premium</div>
               <div className="mypage-plan-features">
@@ -121,21 +130,37 @@ export default function Page() {
                   <span>광고 없는 깔끔한 읽기 환경</span>
                 </div>
               </div>
-              <button 
+              <button
                 className="mypage-cancel-btn"
                 onClick={handleCancelSubscription}
                 disabled={isCancelling}
               >
                 {isCancelling ? "취소 처리중..." : "구독 취소"}
               </button>
-              {error && (
-                <p className="mypage-error-text">{error}</p>
+              {cancelError && (
+                <p className="mypage-error-text">{cancelError}</p>
               )}
-              {checklist.length > 0 && (
+              {cancelChecklist.length > 0 && (
                 <div className="mypage-checklist">
                   <div className="mypage-checklist-title">취소 진행 단계</div>
                   <ul className="mypage-checklist-list">
-                    {checklist.map(item => (
+                    {cancelChecklist.map(item => (
+                      <li
+                        key={item.step}
+                        className={`mypage-checklist-item ${item.completed ? "completed" : ""}`}
+                      >
+                        <span>{item.step}</span>
+                        <span className="mypage-checklist-status">{item.completed ? "완료" : "대기"}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {statusChecklist.length > 0 && (
+                <div className="mypage-checklist">
+                  <div className="mypage-checklist-title">상태 조회 단계</div>
+                  <ul className="mypage-checklist-list">
+                    {statusChecklist.map(item => (
                       <li
                         key={item.step}
                         className={`mypage-checklist-item ${item.completed ? "completed" : ""}`}
@@ -151,16 +176,16 @@ export default function Page() {
           ) : (
             <div className="mypage-subscription-inactive">
               <div className="mypage-unsubscribed-message">
-                구독하고 프리미엄 콘텐츠를 즐겨보세요
+                {statusMessage}
               </div>
               <div className="mypage-plan-preview">
                 <div className="mypage-preview-item">✓ 모든 프리미엄 콘텐츠</div>
                 <div className="mypage-preview-item">✓ 매주 트렌드 리포트</div>
                 <div className="mypage-preview-item">✓ 광고 없는 환경</div>
               </div>
-              <button 
+              <button
                 className="mypage-subscribe-btn"
-                onClick={handleSubscriptionToggle}
+                onClick={handleSubscribe}
               >
                 지금 구독하기
               </button>
