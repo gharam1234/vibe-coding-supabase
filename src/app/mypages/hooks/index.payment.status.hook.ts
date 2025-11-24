@@ -1,22 +1,22 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
+import { getSupabaseClient } from "@/lib/supabase";
 
 /**
- * prompt.202 명세에 따른 결제 상태 조회 Hook
+ * prompt.202.func.payment.status.user_id.txt 명세에 따른 결제 상태 조회 Hook
  *
  * 기능:
  * - payment 테이블 조회 및 상태 판정
- * - transaction_key 그룹화 및 최신 1건 선별
- * - status='Paid' 및 유효기간 필터링
+ * - user_id 필터링 (내 결제 정보만)
+ * - transaction_key 그룹화 및 각 그룹에서 created_at 최신 1건 선별
+ * - status='Paid' 및 유효기간 필터링 (start_at <= 현재시각 <= end_grace_at)
  * - 체크리스트 형태의 진행 상황 반환
  *
  * 유효 구독 조건:
- * 1. status === "Paid"
- * 2. start_at <= now(UTC) <= end_grace_at
- *
- * 참고: 현재 테스트 목적이므로 사용자 식별값 없이 전체 조회
- * (실제 서비스: user_id 필터 추가 필수)
+ * 1. user_id === 로그인된 user_id
+ * 2. status === "Paid"
+ * 3. start_at <= 현재시각(UTC) <= end_grace_at
  */
 
 export interface PaymentStatusChecklistItem {
@@ -65,6 +65,16 @@ export function usePaymentStatus(): UsePaymentStatusResult {
     setError(null);
 
     try {
+      // Supabase 세션에서 인증 토큰 가져오기
+      const supabase = getSupabaseClient();
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+      if (sessionError || !session?.access_token) {
+        throw new Error("인증 토큰을 가져올 수 없습니다. 다시 로그인해주세요.");
+      }
+
+      const authToken = session.access_token;
+
       /**
        * API 호출: /api/payments/status
        * - 서버에서 Supabase 쿼리 수행
@@ -75,6 +85,7 @@ export function usePaymentStatus(): UsePaymentStatusResult {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}`,
         },
       });
 

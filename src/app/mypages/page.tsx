@@ -1,27 +1,16 @@
 "use client"
 
 import { useRouter } from "next/navigation";
+import { User } from "lucide-react";
 import { usePaymentCancel } from "./hooks/index.payment.cancel.hook";
 import { usePaymentStatus } from "./hooks/index.payment.status.hook";
-
-interface UserProfile {
-  profileImage: string;
-  nickname: string;
-  bio: string;
-  joinDate: string;
-}
-
-const userData: UserProfile = {
-  profileImage: "https://images.unsplash.com/photo-1613145997970-db84a7975fbb?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxwcm9maWxlJTIwcG9ydHJhaXQlMjBwZXJzb258ZW58MXx8fHwxNzYyNTkxMjU5fDA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral",
-  nickname: "테크러버",
-  bio: "최신 IT 트렌드와 개발 이야기를 공유합니다",
-  joinDate: "2024.03",
-};
+import { useProfile } from "./hooks/index.profile.hook";
 
 export default function Page() {
   const router = useRouter();
   const { cancelSubscription, isCancelling, checklist: cancelChecklist, error: cancelError } = usePaymentCancel();
   const { isSubscribed, transactionKey, statusMessage, isLoading: isStatusLoading, error: statusError, checklist: statusChecklist } = usePaymentStatus();
+  const { profile, isLoading: isProfileLoading, error: profileError, checklist: profileChecklist } = useProfile();
 
   const handleBackToList = () => {
     router.push('/magazines');
@@ -68,14 +57,64 @@ export default function Page() {
       <div className="mypage-grid">
         {/* 프로필 카드 */}
         <div className="mypage-profile-card">
-          <img
-            src={userData.profileImage}
-            alt={userData.nickname}
-            className="mypage-avatar"
-          />
-          <h2 className="mypage-name">{userData.nickname}</h2>
-          <p className="mypage-bio-text">{userData.bio}</p>
-          <div className="mypage-join-date">가입일 {userData.joinDate}</div>
+          {isProfileLoading ? (
+            <div className="mypage-loading">
+              프로필 정보를 조회하는 중입니다...
+            </div>
+          ) : profileError ? (
+            <div className="mypage-error-section">
+              <p className="mypage-error-text">{profileError}</p>
+              <button
+                className="mypage-retry-btn"
+                onClick={() => window.location.reload()}
+              >
+                다시 시도
+              </button>
+            </div>
+          ) : profile ? (
+            <>
+              {profile.profileImage ? (
+                <img
+                  src={profile.profileImage}
+                  alt={profile.nickname}
+                  className="mypage-avatar"
+                />
+              ) : (
+                <div className="mypage-avatar mypage-avatar-placeholder">
+                  <User size={48} strokeWidth={1.5} />
+                </div>
+              )}
+              <h2 className="mypage-name">{profile.nickname}</h2>
+              <p className="mypage-bio-text">{profile.email}</p>
+              <div className="mypage-join-date">가입일 {profile.joinDate}</div>
+              {profileChecklist.length > 0 && (
+                <div className="mypage-checklist">
+                  <div className="mypage-checklist-title">프로필 조회 단계</div>
+                  <ul className="mypage-checklist-list">
+                    {profileChecklist.map(item => (
+                      <li
+                        key={item.step}
+                        className={`mypage-checklist-item ${item.completed ? "completed" : ""}`}
+                      >
+                        <span>{item.step}</span>
+                        <span className="mypage-checklist-status">{item.completed ? "완료" : "대기"}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="mypage-error-section">
+              <p className="mypage-error-text">로그인이 필요합니다.</p>
+              <button
+                className="mypage-retry-btn"
+                onClick={() => router.push('/auth/login')}
+              >
+                로그인하기
+              </button>
+            </div>
+          )}
         </div>
 
         {/* 구독 플랜 카드 */}

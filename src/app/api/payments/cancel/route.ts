@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServiceRoleClient } from "@/lib/supabase";
 
 interface CancelRequest {
   transactionKey: string;
@@ -14,10 +16,15 @@ interface CancelResponse {
   checklist: ChecklistItem[];
 }
 
+/**
+ * 프롬프트 명세에 따른 체크리스트 정의
+ */
 const CHECKLIST_STEPS = [
   "요청 바디 파싱",
   "요청 데이터 검증",
-  "포트원 시크릿 확인",
+  "인가 확인 (API 요청자 검증)",
+  "취소 가능 여부 검증 (payment 테이블 조회)",
+  "포트원 API 시크릿 확인",
   "포트원 결제 취소 요청",
 ] as const;
 
@@ -34,6 +41,39 @@ function validateCancelRequest(body: unknown): { valid: boolean; error?: string 
   }
 
   return { valid: true };
+}
+
+// 인가: 가장 간단한 방식으로 Supabase 세션 확인
+async function getUserIdFromSession(request: NextRequest): Promise<string | null> {
+  try {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return null;
+    }
+
+    // Authorization 헤더에서 토큰 확인 (가장 간단한 방식)
+    const authHeader = request.headers.get("authorization");
+    const token = authHeader?.replace("Bearer ", "");
+
+    if (!token) {
+      return null;
+    }
+
+    // Supabase 클라이언트 생성 및 사용자 확인
+    const supabase = createClient(supabaseUrl, supabaseAnonKey);
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+
+    if (error || !user) {
+      return null;
+    }
+
+    return user.id;
+  } catch (error) {
+    console.error("세션 확인 중 오류:", error);
+    return null;
+  }
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse<CancelResponse>> {
@@ -65,6 +105,36 @@ export async function POST(request: NextRequest): Promise<NextResponse<CancelRes
 
     const cancelData = body as CancelRequest;
 
+    // 인가: API 요청자 검증
+    const userId = await getUserIdFromSession(request);
+    if (!userId) {
+      console.warn("인가 실패: 유효한 세션이 없습니다");
+      return respond(false, 401);
+    }
+
+    markStepCompleted("인가 확인 (API 요청자 검증)");
+
+    // 취소 가능 여부 검증: payment 테이블에서 조회
+    const supabase = getSupabaseServiceRoleClient();
+    const { data: payment, error: paymentError } = await supabase
+      .from("payment")
+      .select("transaction_key, user_id")
+      .eq("user_id", userId)
+      .eq("transaction_key", cancelData.transactionKey)
+      .maybeSingle();
+
+    if (paymentError) {
+      console.error("결제 정보 조회 실패:", paymentError);
+      return respond(false, 500);
+    }
+
+    if (!payment) {
+      console.warn("취소 불가: 해당 결제 정보를 찾을 수 없습니다");
+      return respond(false, 404);
+    }
+
+    markStepCompleted("취소 가능 여부 검증 (payment 테이블 조회)");
+
     // 포트원 API 시크릿 확인
     const apiSecret = process.env.PORTONE_API_SECRET;
     if (!apiSecret) {
@@ -72,9 +142,9 @@ export async function POST(request: NextRequest): Promise<NextResponse<CancelRes
       return respond(false, 500);
     }
 
-    markStepCompleted("포트원 시크릿 확인");
+    markStepCompleted("포트원 API 시크릿 확인");
 
-    // 포트원 V2 API를 통한 결제 취소
+    // transactionKey를 사용하여 portone에 결제 취소 요청
     const portoneResponse = await fetch(
       `https://api.portone.io/payments/${encodeURIComponent(cancelData.transactionKey)}/cancel`,
       {
@@ -112,7 +182,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<CancelRes
 
     markStepCompleted("포트원 결제 취소 요청");
 
-    // 취소 성공 반환
+    // DB에 저장하지 않고 응답 반환
     return respond(true, 200);
   } catch (error) {
     console.error("결제 취소 중 오류 발생:", error);

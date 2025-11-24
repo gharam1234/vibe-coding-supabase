@@ -1,0 +1,14 @@
+==============================================
+
+참고할 PAGE 경로: src/app/auth/login/page.tsx
+구현될 HOOK 경로: src/app/auth/login/hooks/index.login.google.hook.ts
+
+==============================================
+
+핵심요구사항) 다음의 기능을 step-by-step 으로 구현하고, 적용 결과를 체크리스트로 반환할 것.
+            1. 구글로그인시나리오
+                1-1) 구글로그인 버튼을 누르면 supabase의 구글로그인 API를 호출할 것.
+
+                1-2) 로그인에 성공시, 로그인완료 페이지로 이동할 것.
+                        - redirectTo: src/app/auth/login/success/page.tsx
+                        

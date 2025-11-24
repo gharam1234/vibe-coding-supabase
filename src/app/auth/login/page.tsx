@@ -1,14 +1,11 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
+import { useGoogleLogin } from './hooks/index.login.google.hook';
 
 export default function LoginPage() {
   const router = useRouter();
-
-  const handleGoogleLogin = () => {
-    console.log("구글 로그인 시도");
-    alert("구글 로그인 기능은 데모용입니다.");
-  };
+  const { handleGoogleLogin } = useGoogleLogin();
 
   const handleBrowseWithoutLogin = () => {
     router.push('/magazines');

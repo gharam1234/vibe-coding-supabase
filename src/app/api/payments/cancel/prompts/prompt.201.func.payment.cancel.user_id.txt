@@ -1,0 +1,36 @@
+==============================================
+
+구현될 ROUTE 경로: src/app/api/payments/cancel/route.ts
+
+==============================================
+
+핵심요구사항) 다음의 API를 portone v2을 연동하여 step-by-step 으로 구현하고, 적용 결과를 체크리스트로 반환할 것.
+                1. 상세 구현 정보
+                        1-1) 메서드: POST
+                        1-2) 요청데이터: {
+                                transactionKey
+                        }
+                        1-3) 응답데이터: {
+                                success: boolean
+                        }
+
+                2. 인가
+                        2-1) api 요청자 검증 인가
+                                - 해당 파일 내, 가장 간단한 인가 방식 채택
+
+                3. 취소시나리오
+                        3-1) 취소가능여부 검증
+                                3-1-1) payment 테이블 목록 조회
+                                        - AND조건) payment.user_id === 인가된 user_id
+                                        - AND조건) payment.transactionKey === 요청데이터.transactionKey
+
+                                3-1-2) 조회 결과 없는 경우, 에러 처리
+
+                        3-2) transactionKey를 사용하여 portone에 결제 취소 요청
+                                - API엔드포인트: https://api.portone.io/payments/${transactionKey}/cancel
+                                - 메서드: POST
+                                - 바디: {
+                                        reason: "취소 사유 없음"
+                                }
+
+                        3-3) db에 저장하지 않고, 응답 반환

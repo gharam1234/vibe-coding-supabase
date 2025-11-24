@@ -17,6 +17,7 @@ interface PortOnePayment {
   customer?: {
     id?: string;
   };
+  customData?: string | Record<string, unknown>;
 }
 
 interface PaymentTableRow {
@@ -28,6 +29,7 @@ interface PaymentTableRow {
   end_grace_at: string;
   next_schedule_at: string;
   next_schedule_id: string;
+  user_id: string;
 }
 
 interface PaymentScheduleItem {
@@ -84,13 +86,51 @@ function addDays(date: Date, days: number) {
   return result;
 }
 
-function buildNextScheduleAt(endAt: Date) {
-  const nextDay = addDays(endAt, 1);
-  nextDay.setHours(10, 0, 0, 0);
+/**
+ * 한국시간(KST, UTC+9) 기준으로 시간을 설정한 후 UTC로 변환
+ * @param date 기준 날짜 (UTC)
+ * @param hours 한국시간 기준 시간 (0-23)
+ * @param minutes 한국시간 기준 분 (0-59)
+ * @param seconds 한국시간 기준 초 (0-59)
+ */
+function setKSTTime(date: Date, hours: number, minutes: number, seconds: number = 0): Date {
+  // 주어진 UTC 날짜를 한국시간 기준 날짜로 해석
+  // UTC 날짜의 연/월/일을 가져옴
+  const year = date.getUTCFullYear();
+  const month = date.getUTCMonth();
+  const day = date.getUTCDate();
+  
+  // 한국시간으로 시간 설정 (UTC+9이므로 9시간 빼서 UTC로 변환)
+  // hours가 9보다 작으면 전날로 넘어갈 수 있으므로 Date.UTC를 사용하여 자동 처리
+  let utcHours = hours - 9;
+  let utcDate = new Date(Date.UTC(year, month, day, utcHours, minutes, seconds));
+  
+  // UTC 시간이 음수가 되면 전날로 자동 조정되므로, 날짜가 변경되었는지 확인
+  // Date.UTC는 자동으로 날짜를 조정하므로 별도 처리 불필요
+  return utcDate;
+}
 
-  const randomMinutes = Math.floor(Math.random() * 60);
-  nextDay.setMinutes(nextDay.getMinutes() + randomMinutes);
-  return nextDay;
+/**
+ * end_at + 1일 밤 11:59:59(한국시간 기준) => UTC로 변환하여 반환
+ */
+function buildEndGraceAt(endAt: Date): Date {
+  const nextDay = addDays(endAt, 1);
+  return setKSTTime(nextDay, 23, 59, 59);
+}
+
+/**
+ * end_at + 1일 오전 10시~11시(한국시간 기준) 사이 임의 시각 => UTC로 변환하여 반환
+ */
+function buildNextScheduleAt(endAt: Date): Date {
+  const nextDay = addDays(endAt, 1);
+  // 한국시간 오전 10시를 UTC로 변환
+  const startTime = setKSTTime(nextDay, 10, 0, 0);
+  // 한국시간 오전 11시를 UTC로 변환
+  const endTime = setKSTTime(nextDay, 11, 0, 0);
+  
+  // 10시~11시 사이의 랜덤 시간 (밀리초 단위)
+  const randomTime = startTime.getTime() + Math.random() * (endTime.getTime() - startTime.getTime());
+  return new Date(randomTime);
 }
 
 async function fetchPayment(paymentId: string, apiSecret: string) {
@@ -119,6 +159,7 @@ async function insertPaymentRecord(params: {
   endGraceAt: string;
   nextScheduleAt: string;
   nextScheduleId: string;
+  userId: string;
 }) {
   const supabase = getSupabaseServiceRoleClient();
 
@@ -131,6 +172,7 @@ async function insertPaymentRecord(params: {
     end_grace_at: params.endGraceAt,
     next_schedule_at: params.nextScheduleAt,
     next_schedule_id: params.nextScheduleId,
+    user_id: params.userId,
   });
 
   if (error) {
@@ -173,6 +215,36 @@ async function scheduleNextPayment(options: {
     throw new Error("결제 예약에 필요한 정보가 부족합니다");
   }
 
+  const requestBody: {
+    payment: {
+      billingKey: string;
+      orderName: string;
+      customer: { id: string };
+      amount: { total: number };
+      currency: string;
+      customData?: string | Record<string, unknown>;
+    };
+    timeToPay: string;
+  } = {
+    payment: {
+      billingKey: payment.billingKey,
+      orderName: payment.orderName,
+      customer: {
+        id: payment.customer.id,
+      },
+      amount: {
+        total: amount,
+      },
+      currency: "KRW",
+    },
+    timeToPay: nextScheduleAt.toISOString(),
+  };
+
+  // customData가 있으면 포함
+  if (payment.customData !== undefined) {
+    requestBody.payment.customData = payment.customData;
+  }
+
   const res = await fetch(
     `${PORTONE_BASE_URL}/payments/${encodeURIComponent(nextScheduleId)}/schedule`,
     {
@@ -181,20 +253,7 @@ async function scheduleNextPayment(options: {
         "Content-Type": "application/json",
         Authorization: `PortOne ${apiSecret}`,
       },
-      body: JSON.stringify({
-        payment: {
-          billingKey: payment.billingKey,
-          orderName: payment.orderName,
-          customer: {
-            id: payment.customer.id,
-          },
-          amount: {
-            total: amount,
-          },
-          currency: "KRW",
-        },
-        timeToPay: nextScheduleAt.toISOString(),
-      }),
+      body: JSON.stringify(requestBody),
     }
   );
 
@@ -310,10 +369,20 @@ export async function POST(request: NextRequest) {
     }
 
     if (payload.status === "Paid") {
+      // customData에서 user_id 추출
+      const userId = typeof payment.customData === "string" 
+        ? payment.customData 
+        : (payment.customData as Record<string, unknown>)?.user_id as string | undefined;
+
+      if (!userId || typeof userId !== "string") {
+        console.error("결제정보에서 user_id를 확인할 수 없습니다.");
+        return jsonError(500);
+      }
+
       const nextScheduleId = randomUUID();
       const startAt = new Date();
       const endAt = addDays(startAt, 30);
-      const endGraceAt = addDays(startAt, 31);
+      const endGraceAt = buildEndGraceAt(endAt);
       const nextScheduleAt = buildNextScheduleAt(endAt);
 
       await insertPaymentRecord({
@@ -325,6 +394,7 @@ export async function POST(request: NextRequest) {
         endGraceAt: endGraceAt.toISOString(),
         nextScheduleAt: nextScheduleAt.toISOString(),
         nextScheduleId,
+        userId,
       });
       checklist.push("결제 정보 Supabase 기록 완료");
 
@@ -351,6 +421,7 @@ export async function POST(request: NextRequest) {
         endGraceAt: existingRecord.end_grace_at,
         nextScheduleAt: existingRecord.next_schedule_at,
         nextScheduleId: existingRecord.next_schedule_id,
+        userId: existingRecord.user_id,
       });
       checklist.push("결제 취소 기록 저장 완료");
 

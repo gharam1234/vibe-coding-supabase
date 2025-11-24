@@ -3,34 +3,74 @@
 import { ArrowLeft } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { usePaymentBillingKey } from "./hooks/index.payment.hook";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { getSupabaseClient } from "@/lib/supabase";
 
 export default function GlossaryPayments() {
   const router = useRouter();
   const { requestBillingKey, processPayment, isLoading, error } = usePaymentBillingKey();
   const [isProcessing, setIsProcessing] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [isLoadingUser, setIsLoadingUser] = useState(true);
+
+  // 로그인된 사용자 정보 가져오기
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const supabase = getSupabaseClient();
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (sessionError) {
+          console.error('세션 확인 오류:', sessionError);
+          setIsLoadingUser(false);
+          return;
+        }
+
+        if (session?.user) {
+          setUserId(session.user.id);
+          setAccessToken(session.access_token);
+        } else {
+          // 로그인하지 않은 경우 로그인 페이지로 리다이렉트
+          router.push('/auth/login');
+        }
+      } catch (err) {
+        console.error('사용자 정보 조회 오류:', err);
+      } finally {
+        setIsLoadingUser(false);
+      }
+    };
+
+    fetchUser();
+  }, [router]);
 
   const handleNavigateToList = () => {
     router.push('/magazines');
   };
 
   const handleSubscribe = async () => {
+    if (!userId || !accessToken) {
+      alert('로그인이 필요합니다.');
+      router.push('/auth/login');
+      return;
+    }
+
     setIsProcessing(true);
     try {
-      // 고객 ID (실제로는 사용자 정보에서 가져와야 함)
-      const customerId = `user-${Date.now()}`;
+      // 고객 정보 설정
+      const customerId = userId;
       const customerName = "구독자";
       const orderName = "IT 매거진 월간 구독";
       const amount = 9900;
 
-      // 1. 빌링키 발급 요청
+      // 1. 빌링키 발급 요청 (PG: 토스페이먼츠)
       const billingKeyResult = await requestBillingKey(customerId, customerName);
       if (!billingKeyResult) {
         alert(`빌링키 발급 실패: ${error || '알 수 없는 오류'}`);
         return;
       }
 
-      // 2. 빌링키로 결제 처리
+      // 2. 빌링키로 결제 처리 (customData에 로그인된 user_id 포함)
       const paymentResult = await processPayment({
         billingKey: billingKeyResult.billingKey,
         orderName: orderName,
@@ -38,17 +78,18 @@ export default function GlossaryPayments() {
         customer: {
           id: customerId,
         },
-      });
+        customData: userId, // 로그인된 user_id (UUID)
+      }, accessToken);
 
       if (!paymentResult) {
         alert('결제 처리 실패');
         return;
       }
 
-      // 3. 결제 성공 처리
+      // 3. 구독결제 성공 이후 로직
       if (paymentResult.success) {
         alert('구독에 성공하였습니다.');
-        handleNavigateToList();
+        router.push('/magazines'); // 이동할 페이지: /magazines
       } else {
         alert('결제에 실패했습니다.');
       }
@@ -115,9 +156,9 @@ export default function GlossaryPayments() {
             <button
               className="payment-subscribe-button"
               onClick={handleSubscribe}
-              disabled={isProcessing || isLoading}
+              disabled={isProcessing || isLoading || isLoadingUser || !userId}
             >
-              {isProcessing || isLoading ? '처리 중...' : '구독하기'}
+              {isLoadingUser ? '로딩 중...' : isProcessing || isLoading ? '처리 중...' : '구독하기'}
             </button>
           </div>
         </div>

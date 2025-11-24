@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase";
 
 interface PaymentStatusItem {
@@ -19,19 +20,61 @@ interface PaymentStatusResponse {
 }
 
 /**
- * prompt.202 명세에 따른 체크리스트 정의
- * - 공통 전제: 테스트 목적이므로 사용자 식별값 없이 전체 payment 테이블 조회
- * - 실제 서비스 반영 시 user_id 또는 식별 조건 필수 (아래 TODO 참고)
+ * 인가: 가장 간단한 방식으로 Supabase 세션 확인
+ */
+async function getUserIdFromSession(request: NextRequest): Promise<string | null> {
+  try {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return null;
+    }
+
+    // Authorization 헤더에서 토큰 확인 (가장 간단한 방식)
+    const authHeader = request.headers.get("authorization");
+    const token = authHeader?.replace("Bearer ", "");
+
+    if (!token) {
+      return null;
+    }
+
+    // Supabase 클라이언트 생성 및 사용자 확인
+    const supabase = createClient(supabaseUrl, supabaseAnonKey);
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+
+    if (error || !user) {
+      return null;
+    }
+
+    return user.id;
+  } catch (error) {
+    console.error("세션 확인 중 오류:", error);
+    return null;
+  }
+}
+
+/**
+ * prompt.202.func.payment.status.user_id.txt 명세에 따른 체크리스트 정의
+ * 프롬프트 구조:
+ * 1. 조회시나리오
+ *    1-1) payment 테이블의 목록 조회
+ *        1-1-1) 내 결제 정보만 필터링: user_id === 로그인된 user_id
+ *        1-1-2) 그룹화: transaction_key 그룹화, 각 그룹에서 created_at 최신 1건씩 추출
+ *        1-1-3) 위 그룹 결과에서 조회: status === "Paid", start_at <= 현재시각 <= end_grace_at
+ *    1-2) 조회 결과에 따른 로직 완성
  */
 const CHECKLIST_STEPS = [
   "1단계: Supabase 데이터베이스 연결 확인",
-  "2단계: payment 테이블에서 전체 데이터 조회 (최신순 정렬)",
-  "3단계: transaction_key 기준 그룹화 및 최신 1건만 선별",
-  "4단계: status='Paid' 및 유효기간(start_at <= now <= end_grace_at) 필터 적용",
-  "5단계: 최종 결과 판단 및 메시지 생성",
+  "2단계: 인가 확인 (로그인된 user_id 추출)",
+  "1-1-1) payment 테이블 목록 조회 - 내 결제 정보만 필터링 (user_id === 로그인된 user_id)",
+  "1-1-2-1) transaction_key 기준 그룹화",
+  "1-1-2-2) 각 그룹에서 created_at 최신 1건씩 추출",
+  "1-1-3) 위 그룹 결과에서 조회 (status === 'Paid', start_at <= 현재시각 <= end_grace_at)",
+  "1-2) 조회 결과에 따른 로직 완성 (상태메시지: 구독중/Free, 버튼 활성화 여부 판단, transaction_key 전달)",
 ] as const;
 
-export async function GET(): Promise<NextResponse<PaymentStatusResponse>> {
+export async function GET(request: NextRequest): Promise<NextResponse<PaymentStatusResponse>> {
   try {
     const checklist = CHECKLIST_STEPS.map((step) => ({ step, completed: false }));
     const markStepCompleted = (step: string) => {
@@ -63,7 +106,17 @@ export async function GET(): Promise<NextResponse<PaymentStatusResponse>> {
     markStepCompleted(CHECKLIST_STEPS[0]);
 
     /**
-     * 2단계: 현재 시간 (UTC 기준)
+     * 2단계: 인가 확인 (로그인된 user_id 추출)
+     */
+    const userId = await getUserIdFromSession(request);
+    if (!userId) {
+      console.warn("인가 실패: 유효한 세션이 없습니다");
+      return respond(false, false, undefined, "로그인이 필요합니다.", 401);
+    }
+    markStepCompleted(CHECKLIST_STEPS[1]);
+
+    /**
+     * 현재 시간 (UTC 기준)
      * prompt.202 명세: "시간 비교는 UTC 타임존을 기준으로 하며,
      * 클라이언트에서 Date.now() → ISO 문자열 → Supabase timestamptz 비교 순서를 유지한다."
      */
@@ -71,24 +124,19 @@ export async function GET(): Promise<NextResponse<PaymentStatusResponse>> {
     const nowUtcIso = new Date(nowMs).toISOString(); // ISO 문자열로 변환
 
     // 로깅 (PII 마스킹 규칙: transaction_key는 처음 10자리만 노출, user_id는 완전 마스킹)
-    console.log(`[결제 상태 조회] 조회 시간(UTC): ${nowUtcIso}`);
+    console.log(`[결제 상태 조회] 조회 시간(UTC): ${nowUtcIso}, user_id: ${userId.substring(0, 8)}****`);
 
     /**
-     * 3단계: payment 테이블에서 전체 데이터 조회
-     * 주석: Supabase SDK의 기본 select로는 그룹화가 어렵기 때문에
-     * 다음 중 하나의 방식을 선택하여 구현 가능:
-     * 옵션1) payments_latest_by_transaction 같은 View 를 미리 만들어 select 한다.
-     * 옵션2) rpc('payments_latest_by_transaction') 형태의 서버 함수를 호출한다.
-     *
-     * 현재 구현: 클라이언트 사이드 그룹화 방식 사용
-     * (서버 부하 최소화, 하지만 데이터량 많을 경우 View/RPC 권장)
+     * 1-1-1) payment 테이블 목록 조회 - 내 결제 정보만 필터링
+     * user_id === 로그인된 user_id
      */
     const { data: allPayments, error: queryError } = await supabase
       .from("payment")
-      .select("transaction_key, status, start_at, end_grace_at, created_at")
+      .select("transaction_key, status, start_at, end_grace_at, created_at, user_id")
+      .eq("user_id", userId) // 내 결제 정보만 필터링
       .order("created_at", { ascending: false });
 
-    markStepCompleted(CHECKLIST_STEPS[1]);
+    markStepCompleted(CHECKLIST_STEPS[2]);
 
     if (queryError) {
       console.error("[결제 상태 조회] 데이터베이스 조회 오류:", queryError);
@@ -98,57 +146,65 @@ export async function GET(): Promise<NextResponse<PaymentStatusResponse>> {
     console.log(`[결제 상태 조회] 조회된 결제 기록 수: ${allPayments?.length ?? 0}개`);
 
     /**
-     * 4단계: transaction_key 기준 그룹화 및 최신 1건만 선별
-     * prompt.202 명세: "각 그룹에서 created_at 기준 최신 1건만 남기기"
+     * 1-1-2-1) 그룹화: transaction_key 그룹화
      */
-    const paymentMap = new Map<string, PaymentStatusItem>();
+    const paymentMap = new Map<string, PaymentStatusItem[]>();
     if (allPayments) {
       for (const payment of allPayments) {
         const key = payment.transaction_key;
         if (!key) continue;
 
-        const existing = paymentMap.get(key);
-        if (!existing) {
-          paymentMap.set(key, payment as PaymentStatusItem);
-          continue;
+        if (!paymentMap.has(key)) {
+          paymentMap.set(key, []);
         }
-
-        const existingCreated = new Date(existing.created_at).getTime();
-        const currentCreated = new Date(payment.created_at).getTime();
-
-        // null 또는 범위를 벗어난 값은 "Free" 처리
-        if (Number.isNaN(existingCreated) || Number.isNaN(currentCreated)) {
-          if (Number.isNaN(existingCreated) && !Number.isNaN(currentCreated)) {
-            paymentMap.set(key, payment as PaymentStatusItem);
-          }
-          continue;
-        }
-
-        if (currentCreated > existingCreated) {
-          paymentMap.set(key, payment as PaymentStatusItem);
-        }
+        paymentMap.get(key)!.push(payment as PaymentStatusItem);
       }
     }
 
-    markStepCompleted(CHECKLIST_STEPS[2]);
+    markStepCompleted(CHECKLIST_STEPS[3]);
 
-    console.log(`[결제 상태 조회] 그룹화 후 결제 기록 수: ${paymentMap.size}개`);
+    console.log(`[결제 상태 조회] transaction_key 그룹 수: ${paymentMap.size}개`);
 
     /**
-     * 5단계: status='Paid' 및 유효기간 필터 적용
-     * 필터 조건:
-     * 1) status === "Paid"
-     * 2) start_at <= nowUtc <= end_grace_at (동일 타임존 비교, 경계값 포함)
+     * 1-1-2-2) 각 그룹에서 created_at 최신 1건씩 추출
      */
-    const activePayments = Array.from(paymentMap.values()).filter((payment) => {
-      // 조건 1: status 확인
+    const latestPaymentsByGroup = new Map<string, PaymentStatusItem>();
+    for (const [key, payments] of paymentMap.entries()) {
+      // 각 그룹에서 created_at 기준 최신 1건 찾기
+      let latestPayment: PaymentStatusItem | null = null;
+      let latestCreatedAt = 0;
+
+      for (const payment of payments) {
+        const createdAt = new Date(payment.created_at).getTime();
+        if (!Number.isNaN(createdAt) && createdAt > latestCreatedAt) {
+          latestCreatedAt = createdAt;
+          latestPayment = payment;
+        }
+      }
+
+      if (latestPayment) {
+        latestPaymentsByGroup.set(key, latestPayment);
+      }
+    }
+
+    markStepCompleted(CHECKLIST_STEPS[4]);
+
+    console.log(`[결제 상태 조회] 그룹화 후 최신 1건씩 추출된 결제 기록 수: ${latestPaymentsByGroup.size}개`);
+
+    /**
+     * 1-1-3) 위 그룹 결과에서 조회
+     *   1) status === "Paid"
+     *   2) start_at <= 현재시각 <= end_grace_at
+     */
+    const activePayments = Array.from(latestPaymentsByGroup.values()).filter((payment) => {
+      // 조건 1: status === "Paid"
       if (payment.status !== "Paid") return false;
 
-      // 조건 2: 유효기간 확인 (UTC 기준)
+      // 조건 2: start_at <= 현재시각 <= end_grace_at (UTC 기준)
       const startAt = new Date(payment.start_at).getTime();
       const endGraceAt = new Date(payment.end_grace_at).getTime();
 
-      // 유효하지 않은 날짜는 제외 (null 또는 범위를 벗어난 값)
+      // 유효하지 않은 날짜는 제외
       if (Number.isNaN(startAt) || Number.isNaN(endGraceAt)) {
         return false;
       }
@@ -164,25 +220,31 @@ export async function GET(): Promise<NextResponse<PaymentStatusResponse>> {
       return isInValidPeriod;
     });
 
-    markStepCompleted(CHECKLIST_STEPS[3]);
+    markStepCompleted(CHECKLIST_STEPS[5]);
 
     /**
-     * 최종 결과 판단
-     * - 활성 결제 데이터 없음 → "Free" 상태
-     * - 활성 결제 데이터 1건 이상 → "구독중" 상태 (최신 1건만 사용)
+     * 1-2) 조회 결과에 따른 로직 완성
+     * - 조회 결과 1건 이상:
+     *   - 상태메시지: 구독중
+     *   - "구독취소" 버튼 활성화
+     *   - "구독취소" 버튼에 transaction_key 전달
+     * - 조회 결과 0건:
+     *   - 상태메시지: Free
+     *   - "구독하기" 버튼 활성화
      */
     const isSubscribed = activePayments.length > 0;
     const transactionKey = isSubscribed ? activePayments[0].transaction_key : undefined;
+    const statusMessage = isSubscribed ? "구독중" : "Free";
 
-    console.log(`[결제 상태 조회] 최종 판정: ${isSubscribed ? "구독중" : "Free"}`);
+    console.log(`[결제 상태 조회] 최종 판정: ${statusMessage}, 활성 구독 건수: ${activePayments.length}건`);
 
-    markStepCompleted(CHECKLIST_STEPS[4]);
+    markStepCompleted(CHECKLIST_STEPS[6]);
 
     return respond(
       true,
       isSubscribed,
       transactionKey,
-      isSubscribed ? "구독중" : "Free",
+      statusMessage,
       200
     );
   } catch (error) {

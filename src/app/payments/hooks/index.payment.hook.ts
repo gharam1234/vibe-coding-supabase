@@ -15,6 +15,7 @@ interface PaymentRequest {
   customer: {
     id: string;
   };
+  customData: string; // 로그인된 user_id (UUID)
 }
 
 interface PaymentResponse {
@@ -99,7 +100,7 @@ export const usePaymentBillingKey = (): UsePaymentHookResult => {
 
   // 결제 API 호출
   const processPayment = useCallback(
-    async (paymentData: PaymentRequest): Promise<PaymentResponse | null> => {
+    async (paymentData: PaymentRequest, accessToken: string): Promise<PaymentResponse | null> => {
       setIsLoading(true);
       setError(null);
 
@@ -108,6 +109,7 @@ export const usePaymentBillingKey = (): UsePaymentHookResult => {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'Authorization': `Bearer ${accessToken}`, // 인증 토큰 헤더 추가
           },
           body: JSON.stringify(paymentData),
         });

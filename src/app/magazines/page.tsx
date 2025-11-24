@@ -1,8 +1,9 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { LogIn, PenSquare, Sparkles } from "lucide-react";
+import { LogIn, PenSquare, Sparkles, User, LogOut } from "lucide-react";
 import { useMagazines } from './index.binding.hook';
+import { useLoginLogoutStatus } from './index.login.logout.status.hook';
 
 const getCategoryColor = (category: string) => {
   const colorMap: Record<string, string> = {
@@ -22,9 +23,18 @@ const getCategoryColor = (category: string) => {
 export default function GlossaryCards() {
   const router = useRouter();
   const { magazines, loading, error } = useMagazines();
+  const { isLoggedIn, isLoading: isAuthLoading, user, logout } = useLoginLogoutStatus();
 
   const handleCardClick = (id: string) => {
     router.push(`/magazines/${id}`);
+  };
+
+  const handleProfileClick = () => {
+    router.push('/mypages');
+  };
+
+  const handleLogout = async () => {
+    await logout();
   };
 
   return (
@@ -33,13 +43,50 @@ export default function GlossaryCards() {
         <h1>IT 매거진</h1>
         <p className="magazine-subtitle">최신 기술 트렌드와 인사이트를 전합니다</p>
         <div className="magazine-header-actions">
-          <button 
-            className="magazine-header-button magazine-header-button-ghost"
-            onClick={() => router.push('/auth/login')}
-          >
-            <LogIn className="magazine-button-icon" />
-            <span className="magazine-button-text">로그인</span>
-          </button>
+          {!isAuthLoading && (
+            <>
+              {isLoggedIn && user ? (
+                <>
+                  {/* 로그인 상태: 프로필 사진, 이름, 로그아웃 버튼 */}
+                  <div 
+                    className="magazine-header-user-info"
+                    onClick={handleProfileClick}
+                  >
+                    {user.avatarUrl ? (
+                      <img 
+                        src={user.avatarUrl} 
+                        alt={user.name || 'User'} 
+                        className="magazine-header-user-avatar"
+                      />
+                    ) : (
+                      <div className="magazine-header-user-avatar-placeholder">
+                        <User size={20} color="#6b7280" />
+                      </div>
+                    )}
+                    <span className="magazine-header-user-name">
+                      {user.name || user.email || '사용자'}
+                    </span>
+                  </div>
+                  <button 
+                    className="magazine-header-button magazine-header-button-ghost"
+                    onClick={handleLogout}
+                  >
+                    <LogOut className="magazine-button-icon" />
+                    <span className="magazine-button-text">로그아웃</span>
+                  </button>
+                </>
+              ) : (
+                /* 비로그인 상태: 로그인 버튼 */
+                <button 
+                  className="magazine-header-button magazine-header-button-ghost"
+                  onClick={() => router.push('/auth/login')}
+                >
+                  <LogIn className="magazine-button-icon" />
+                  <span className="magazine-button-text">로그인</span>
+                </button>
+              )}
+            </>
+          )}
           <button 
             className="magazine-header-button magazine-header-button-primary"
             onClick={() => router.push('/magazines/new')}
