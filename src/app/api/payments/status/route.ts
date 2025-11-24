@@ -169,7 +169,7 @@ export async function GET(request: NextRequest): Promise<NextResponse<PaymentSta
      * 1-1-2-2) 각 그룹에서 created_at 최신 1건씩 추출
      */
     const latestPaymentsByGroup = new Map<string, PaymentStatusItem>();
-    for (const [key, payments] of paymentMap.entries()) {
+    for (const [key, payments] of Array.from(paymentMap.entries())) {
       // 각 그룹에서 created_at 기준 최신 1건 찾기
       let latestPayment: PaymentStatusItem | null = null;
       let latestCreatedAt = 0;

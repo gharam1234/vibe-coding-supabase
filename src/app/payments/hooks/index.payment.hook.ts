@@ -26,7 +26,7 @@ interface UsePaymentHookResult {
   isLoading: boolean;
   error: string | null;
   requestBillingKey: (customerKey: string, customerName: string) => Promise<BillingKeyResponse | null>;
-  processPayment: (paymentData: PaymentRequest) => Promise<PaymentResponse | null>;
+  processPayment: (paymentData: PaymentRequest, accessToken: string) => Promise<PaymentResponse | null>;
 }
 
 export const usePaymentBillingKey = (): UsePaymentHookResult => {

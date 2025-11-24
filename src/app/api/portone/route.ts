@@ -102,8 +102,8 @@ function setKSTTime(date: Date, hours: number, minutes: number, seconds: number 
   
   // 한국시간으로 시간 설정 (UTC+9이므로 9시간 빼서 UTC로 변환)
   // hours가 9보다 작으면 전날로 넘어갈 수 있으므로 Date.UTC를 사용하여 자동 처리
-  let utcHours = hours - 9;
-  let utcDate = new Date(Date.UTC(year, month, day, utcHours, minutes, seconds));
+  const utcHours = hours - 9;
+  const utcDate = new Date(Date.UTC(year, month, day, utcHours, minutes, seconds));
   
   // UTC 시간이 음수가 되면 전날로 자동 조정되므로, 날짜가 변경되었는지 확인
   // Date.UTC는 자동으로 날짜를 조정하므로 별도 처리 불필요
